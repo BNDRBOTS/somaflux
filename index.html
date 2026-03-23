@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SOMA FLUX - CHAKRA-BENTLEY EDITION</title>
+    <style>
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background-color: #000; overflow: hidden;
+            touch-action: none; user-select: none;
+            -webkit-user-select: none; -webkit-touch-callout: none;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        canvas {
+            display: block; width: 100vw; height: 100vh;
+        }
+        /* THE NEON-HUD PLATINUM DASHBOARD */
+        #hud {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            z-index: 100;
+            opacity: 0.3;
+            transition: opacity 0.4s ease-out;
+        }
+        #hud:hover, #hud.active {
+            opacity: 1.0;
+        }
+        .hud-btn {
+            border: 1px solid rgba(34, 211, 238, 0.5);
+            padding: 12px 24px;
+            border-radius: 2px;
+            cursor: pointer;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+            color: #22D3EE;
+            text-shadow: 0 0 8px rgba(34, 211, 238, 0.8);
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            font-size: 11px;
+            font-weight: bold;
+            box-shadow: 0 0 15px rgba(34, 211, 238, 0.1) inset;
+            transition: all 0.2s;
+            user-select: none;
+        }
+        .hud-btn:hover {
+            background: rgba(34, 211, 238, 0.15);
+            border-color: #22D3EE;
+            box-shadow: 0 0 20px rgba(34, 211, 238, 0.4) inset;
+        }
+        .hud-btn:active {
+            transform: scale(0.95);
+        }
+        .hud-btn.disabled {
+            color: #888;
+            border-color: #444;
+            text-shadow: none;
+            box-shadow: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+
+    <!-- THE DASHBOARD -->
+    <div id="hud">
+        <div class="hud-btn disabled" id="btn-audio">AUDIO: OFF</div>
+        <div class="hud-btn" id="btn-freq">MODE: GLACIER-GRIP</div>
+    </div>
+
+    <script>
+        /* * ==========================================
+         * SOMA FLUX: THE NEURAL-DIAMOND ENGINE v2.0
+         * ==========================================
+         */
+        const canvas = document.getElementById('glcanvas');
+        const gl = canvas.getContext('webgl2', { antialias: false, depth: false });
+
+        if (!gl) {
+            alert('YOUR HARDWARE LACKS THE DRIP (WebGL2 required).');
+            throw new Error('WebGL2 required');
+        }
+
+        gl.getExtension('EXT_color_buffer_float');
+
+        // --- ENHANCED HUD & FREQUENCY LOGIC ---
+        const btnAudio = document.getElementById('btn-audio');
+        const btnFreq = document.getElementById('btn-freq');
+        
+        // The Platinum Tiers of Consciousness (EXPANDED TO V12 SPECS)
+        const modes = [
+            { name: "GLACIER-GRIP", carrier: 136.1, mod: 10.0 },     // 10Hz Alpha / OM
+            { name: "PLATINUM-AURA", carrier: 432.0, mod: 7.83 },    // Schumann Resonance
+            { name: "GOD-MODE", carrier: 528.0, mod: 15.0 },         // 528Hz DNA Repair / High Beta
+            { name: "NEON-NIRVANA", carrier: 174.0, mod: 3.0 },      // Pain Relief / Deep Delta
+            { name: "CHAKRA-BENTLEY", carrier: 852.0, mod: 8.0 },    // Third Eye / Theta
+            { name: "SUPERNOVA-SWAG", carrier: 963.0, mod: 40.0 }    // Crown Chakra / Gamma Flash
+        ];
+        let currentMode = 0;
+
+        // HUD Activation Timeout
+        let hudTimeout;
+        function wakeHUD() {
+            const hud = document.getElementById('hud');
+            hud.classList.add('active');
+            clearTimeout(hudTimeout);
+            hudTimeout = setTimeout(() => hud.classList.remove('active'), 3000);
+        }
+
+        // --- SHADERS ---
+        const vsSource = `#version 300 es
+            in vec2 a_position;
+            out vec2 v_uv;
+            void main() {
+                v_uv = a_position * 0.5 + 0.5;
+                gl_Position = vec4(a_position, 0.0, 1.0);
+            }
+        `;
+
+        const fsAdvectSplat = `#version 300 es
+            precision highp float;
+            in vec2 v_uv;
+            out vec4 outColor;
+            
+            uniform sampler2D u_tex;
+            uniform vec2 u_res;
+            uniform vec2 u_mouse;
+            uniform vec2 u_mouseDir;
+            uniform float u_time;
+            uniform float u_isSplat;
+            uniform vec3 u_color;
+            uniform float u_paused;
+
+            vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+            vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+            vec3 permute(vec3 x) { return mod289(((x*34.0)+1.0)*x); }
+            float snoise(vec2 v) {
+                const vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
+                vec2 i  = floor(v + dot(v, C.yy));
+                vec2 x0 = v -   i + dot(i, C.xx);
+                vec2 i1; i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+                vec4 x12 = x0.xyxy + C.xxzz;
+                x12.xy -= i1;
+                i = mod289(i);
+                vec3 p = permute( permute( i.y + vec3(0.0, i1.y, 1.0 )) + i.x + vec3(0.0, i1.x, 1.0 ));
+                vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+                m = m*m; m = m*m;
+                vec3 x = 2.0 * fract(p * C.www) - 1.0;
+                vec3 h = abs(x) - 0.5;
+                vec3 ox = floor(x + 0.5);
+                vec3 a0 = x - ox;
+                m *= 1.79284291400159 - 0.85373472095314 * ( a0*a0 + h*h );
+                vec3 g;
+                g.x  = a0.x  * x0.x  + h.x  * x0.y;
+                g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+                return 130.0 * dot(m, g);
+            }
+
+            void main() {
+                if (u_paused > 0.5) {
+                    outColor = texture(u_tex, v_uv);
+                    return;
+                }
+
+                vec2 uv = v_uv;
+                float n1 = snoise(uv * 3.0 + u_time * 0.2);
+                float n2 = snoise(uv * 3.0 - u_time * 0.2 + 100.0);
+                vec2 flow = vec2(n1, n2) * 0.003;
+                
+                vec4 prevState = texture(u_tex, uv - flow);
+                prevState *= 0.99; // Gold-plated decay
+
+                vec4 splatColor = vec4(0.0);
+                if (u_isSplat > 0.5) {
+                    float aspect = u_res.x / u_res.y;
+                    vec2 pos = uv - u_mouse;
+                    pos.x *= aspect;
+                    float dist = length(pos);
+                    float splat = exp(-dist * 150.0);
+                    splatColor = vec4(u_color * splat * 1.5, splat);
+                }
+
+                prevState.rgb = mix(prevState.rgb, prevState.gbr, 0.01);
+                outColor = max(prevState, splatColor);
+            }
+        `;
+
+        const fsDisplay = `#version 300 es
+            precision highp float;
+            in vec2 v_uv;
+            out vec4 outColor;
+            
+            uniform sampler2D u_tex;
+            uniform float u_time;
+            uniform vec2 u_res;
+            uniform float u_pulseFreq;
+
+            void main() {
+                vec4 fluid = texture(u_tex, v_uv);
+                
+                // Dynamic Entrainment Pulse connected to the HUD state
+                float dist = length(v_uv - 0.5);
+                float env = (sin(u_time * 0.5) * 0.5 + 0.5);
+                float pulseWave = (sin(u_time * u_pulseFreq) * 0.5 + 0.5); 
+                
+                float pulse = exp(-dist * (4.0 - env * 1.5));
+                vec3 centerLight = vec3(1.0) * pulse * (0.8 + 0.2 * pulseWave);
+
+                vec3 finalColor = fluid.rgb + centerLight;
+                
+                finalColor = finalColor / (1.0 + finalColor);
+                finalColor = pow(finalColor, vec3(1.0/2.2));
+                
+                outColor = vec4(finalColor, 1.0);
+            }
+        `;
+
+        // --- WEBGL BOILERPLATE ---
+        function compileShader(type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            return shader;
+        }
+
+        function createProgram(fsSource) {
+            const prog = gl.createProgram();
+            gl.attachShader(prog, compileShader(gl.VERTEX_SHADER, vsSource));
+            gl.attachShader(prog, compileShader(gl.FRAGMENT_SHADER, fsSource));
+            gl.linkProgram(prog);
+            return prog;
+        }
+
+        const advectProg = createProgram(fsAdvectSplat);
+        const displayProg = createProgram(fsDisplay);
+
+        const quad = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+
+        function setupQuad(prog) {
+            const pos = gl.getAttribLocation(prog, "a_position");
+            gl.enableVertexAttribArray(pos);
+            gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+        }
+
+        let width, height, fboA, fboB;
+
+        function createFBO(w, h) {
+            const tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.FLOAT, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+            const fbo = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+            return { fbo, tex };
+        }
+
+        function resize() {
+            width = window.innerWidth; height = window.innerHeight;
+            canvas.width = width; canvas.height = height;
+            const simResX = Math.floor(width / 2); const simResY = Math.floor(height / 2);
+            if (fboA) { gl.deleteFramebuffer(fboA.fbo); gl.deleteTexture(fboA.tex); }
+            if (fboB) { gl.deleteFramebuffer(fboB.fbo); gl.deleteTexture(fboB.tex); }
+            fboA = createFBO(simResX, simResY); fboB = createFBO(simResX, simResY);
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // --- AUDIO API (ENHANCED DYNAMIC ENGINE WITH SUB-BASS) ---
+        let audioCtx, carrier, subCarrier, modulator, masterGain, amGain;
+        let audioInitialized = false;
+        let isMuted = true; // Start muted explicitly
+
+        function initAudio() {
+            if (audioInitialized) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            
+            // Force wake the hardware context if the browser tries to silence the drip
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            carrier = audioCtx.createOscillator();
+            subCarrier = audioCtx.createOscillator();
+            modulator = audioCtx.createOscillator();
+            amGain = audioCtx.createGain();
+            const modScale = audioCtx.createGain();
+            masterGain = audioCtx.createGain();
+
+            carrier.type = 'sine';
+            subCarrier.type = 'triangle'; // ADDS THAT EXPENSIVE V12 PURR (OCTAVE DOWN)
+            modulator.type = 'sine';
+
+            amGain.gain.value = 0.5;
+            modScale.gain.value = 0.5; 
+
+            modulator.connect(modScale);
+            modScale.connect(amGain.gain);
+            carrier.connect(amGain);
+            subCarrier.connect(amGain);
+            amGain.connect(masterGain);
+            masterGain.connect(audioCtx.destination);
+
+            // Anchor the gain to mathematically prevent volume clipping
+            masterGain.gain.setValueAtTime(0.0, audioCtx.currentTime); 
+
+            carrier.start();
+            subCarrier.start();
+            modulator.start();
+            
+            audioInitialized = true;
+            updateAudioFrequencies();
+            toggleAudio(false); // Play
+        }
+
+        function updateAudioFrequencies() {
+            if(!audioInitialized) return;
+            const targetMod = modes[currentMode].mod;
+            const targetCar = modes[currentMode].carrier;
+            // Luxurious frequency glide (portamento)
+            carrier.frequency.setTargetAtTime(targetCar, audioCtx.currentTime, 0.5);
+            subCarrier.frequency.setTargetAtTime(targetCar / 2.0, audioCtx.currentTime, 0.5); // Exact octave down sync
+            modulator.frequency.setTargetAtTime(targetMod, audioCtx.currentTime, 0.5);
+        }
+
+        function toggleAudio(forceMute) {
+            if (!audioInitialized) initAudio();
+            isMuted = forceMute !== undefined ? forceMute : !isMuted;
+            
+            // Re-assert dominance over browser restrictions
+            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+            
+            if (audioInitialized) {
+                masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
+                masterGain.gain.setTargetAtTime(isMuted || isPaused ? 0.0 : 0.5, audioCtx.currentTime, 0.5);
+            }
+            
+            btnAudio.textContent = isMuted ? "AUDIO: OFF" : "AUDIO: ON";
+            if(isMuted) btnAudio.classList.add('disabled');
+            else btnAudio.classList.remove('disabled');
+            wakeHUD();
+        }
+
+        // --- HUD EVENTS ---
+        btnAudio.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleAudio();
+        });
+
+        btnFreq.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (!audioInitialized) initAudio();
+            if (isMuted) toggleAudio(false); // AUTO-UNMUTE WHEN SHIFTING GEARS
+            
+            currentMode = (currentMode + 1) % modes.length;
+            btnFreq.textContent = "MODE: " + modes[currentMode].name;
+            updateAudioFrequencies();
+            wakeHUD();
+        });
+
+        // --- INTERACTION & STATE LOGIC ---
+        let pointer = { x: 0, y: 0, isDown: false, dx: 0, dy: 0, color: [0,1,1] };
+        let lastTime = 0;
+        let simTime = 0;
+        let isPaused = false;
+        let pressTimer = null;
+        let touchStartX = 0, touchStartY = 0;
+
+        const luxuryColors = [[0.13, 0.83, 0.93], [0.8, 0.2, 0.9], [1.0, 0.84, 0.0]];
+        function getDripColor() { return luxuryColors[Math.floor(Math.random() * luxuryColors.length)]; }
+
+        function updatePointer(e, down) {
+            let cx, cy;
+            if(e.touches) { cx = e.touches[0].clientX; cy = e.touches[0].clientY; }
+            else { cx = e.clientX; cy = e.clientY; }
+            pointer.dx = cx - pointer.x; pointer.dy = cy - pointer.y;
+            pointer.x = cx; pointer.y = cy;
+            
+            if (down && !pointer.isDown) {
+                pointer.isDown = true;
+                pointer.color = getDripColor();
+            }
+        }
+
+        window.addEventListener('mousedown', (e) => {
+            if(e.target.classList.contains('hud-btn')) return;
+            if (!audioInitialized && isMuted) {
+                // Auto-start audio if user clicks canvas for the first time
+                toggleAudio(false); 
+            }
+            updatePointer(e, true);
+            touchStartX = e.clientX; touchStartY = e.clientY;
+            startLongPress();
+            wakeHUD();
+        });
+        window.addEventListener('mousemove', (e) => {
+            updatePointer(e, pointer.isDown);
+            if(pointer.isDown && Math.hypot(e.clientX-touchStartX, e.clientY-touchStartY) > 10) clearLongPress();
+            if(pointer.isDown || e.clientY > window.innerHeight - 100) wakeHUD();
+        });
+        window.addEventListener('mouseup', () => { pointer.isDown = false; clearLongPress(); });
+
+        window.addEventListener('touchstart', (e) => {
+            if(e.target.classList.contains('hud-btn')) return;
+            if (!audioInitialized && isMuted) toggleAudio(false);
+            updatePointer(e, true);
+            touchStartX = e.touches[0].clientX; touchStartY = e.touches[0].clientY;
+            startLongPress();
+            wakeHUD();
+        }, {passive: false});
+        window.addEventListener('touchmove', (e) => {
+            if(!e.target.classList.contains('hud-btn')) e.preventDefault();
+            updatePointer(e, pointer.isDown);
+            if(pointer.isDown && Math.hypot(e.touches[0].clientX-touchStartX, e.touches[0].clientY-touchStartY) > 10) clearLongPress();
+        }, {passive: false});
+        window.addEventListener('touchend', () => { pointer.isDown = false; clearLongPress(); });
+
+        function startLongPress() {
+            pressTimer = setTimeout(() => {
+                isPaused = !isPaused;
+                if(audioInitialized && masterGain) {
+                    masterGain.gain.setTargetAtTime(isPaused || isMuted ? 0.0 : 0.5, audioCtx.currentTime, 0.5);
+                }
+            }, 600);
+        }
+        function clearLongPress() { if (pressTimer) clearTimeout(pressTimer); }
+
+        // --- RENDER LOOP ---
+        function render(time) {
+            requestAnimationFrame(render);
+            let dt = (time - lastTime) / 1000.0;
+            lastTime = time;
+            if (!isPaused) simTime += dt;
+
+            // 1. ADVECT & SPLAT
+            gl.useProgram(advectProg);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, fboB.fbo);
+            gl.viewport(0, 0, width/2, height/2);
+            gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, fboA.tex);
+            
+            gl.uniform1i(gl.getUniformLocation(advectProg, "u_tex"), 0);
+            gl.uniform2f(gl.getUniformLocation(advectProg, "u_res"), width/2, height/2);
+            gl.uniform2f(gl.getUniformLocation(advectProg, "u_mouse"), pointer.x / width, 1.0 - (pointer.y / height));
+            gl.uniform2f(gl.getUniformLocation(advectProg, "u_mouseDir"), pointer.dx, -pointer.dy);
+            gl.uniform1f(gl.getUniformLocation(advectProg, "u_time"), simTime);
+            gl.uniform1f(gl.getUniformLocation(advectProg, "u_isSplat"), pointer.isDown && !isPaused ? 1.0 : 0.0);
+            gl.uniform3f(gl.getUniformLocation(advectProg, "u_color"), pointer.color[0], pointer.color[1], pointer.color[2]);
+            gl.uniform1f(gl.getUniformLocation(advectProg, "u_paused"), isPaused ? 1.0 : 0.0);
+            
+            setupQuad(advectProg); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+            let temp = fboA; fboA = fboB; fboB = temp;
+
+            // 2. DISPLAY
+            gl.useProgram(displayProg);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.viewport(0, 0, width, height);
+            gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, fboA.tex);
+            
+            gl.uniform1i(gl.getUniformLocation(displayProg, "u_tex"), 0);
+            gl.uniform1f(gl.getUniformLocation(displayProg, "u_time"), simTime);
+            gl.uniform2f(gl.getUniformLocation(displayProg, "u_res"), width, height);
+            
+            // Sync visual pulse rate to selected audio modulation!
+            const currentPulseFreq = modes[currentMode].mod * 2.0 * Math.PI;
+            gl.uniform1f(gl.getUniformLocation(displayProg, "u_pulseFreq"), currentPulseFreq);
+            
+            setupQuad(displayProg); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        }
+
+        // Initialize HUD
+        wakeHUD();
+        requestAnimationFrame(render);
+    </script>
+</body>
+</html>
